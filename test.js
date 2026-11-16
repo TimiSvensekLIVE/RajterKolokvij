@@ -8,8 +8,8 @@ const QS = JSON.parse(fs.readFileSync(path.join(dir, 'questions.json'), 'utf8'))
 const a = tpl.indexOf('// ---------- pomočniki za merila');
 const b = tpl.indexOf('// ---------- stanje');
 let code = 'const QS = ' + JSON.stringify(QS) + ';\n' + tpl.slice(a, b).replace('/*CRITERIA*/', crit);
-code += '\nreturn {grade, CR, PEN};';
-const { grade, CR, PEN } = new Function(code)();
+code += '\nreturn {grade, CR, PEN, checkLang, setSpell};';
+const { grade, CR, PEN, checkLang, setSpell } = new Function(code)();
 
 const modelText = q => q.model.map(p => p.replace(/\*\*/g, '').replace(/^• /, '')).join(' ');
 let bad = 0;
@@ -78,3 +78,77 @@ for (const q of QS) {
   if (Math.max(...r) >= 25) { leak++; console.log('PUŠČA pri', q.n, r); }
 }
 console.log('puščanje (kopija/blebetanje >= 25 %):', leak);
+console.log('--- 6) pravi odgovori uporabnika (igra naj bo blizu moje ocene) ---');
+const real = JSON.parse(fs.readFileSync(path.join(__dirname, 'tests', 'real.json'), 'utf8'));
+let rfail = 0, rerr = 0;
+for (const r of real) {
+  const g = grade(r.n, r.text);
+  const ok = g.pct >= r.lo && g.pct <= r.hi;
+  if (!ok) rfail++;
+  rerr += Math.abs(g.pct - r.mine);
+  console.log((ok ? 'OK  ' : 'NAPAKA'), 'Q' + String(r.n).padStart(2), String(g.pct).padStart(3) + '%', '(moja ' + r.mine + ', razpon ' + r.lo + '-' + r.hi + ')', r.note);
+}
+console.log('pravi odgovori izven razpona:', rfail, '| povprečna razlika do moje ocene:', Math.round(rerr / real.length) + ' točk');
+console.log('--- 7) pravopis in slovnica ---');
+// a) pravilno napisani vzorčni odgovori ne smejo dajati (veliko) opozoril
+let fp = 0;
+for (const q of QS) {
+  const txt = q.model.map(p => p.replace(/\*\*/g, '').replace(/^• /, '')).join(' ');
+  const L = checkLang(txt, true);
+  if (L.total > 1) { fp += L.total; console.log('LAŽNO opozorilo pri vpr.', q.n, L.groups.map(g => g.title + ': ' + g.items.map(i => i.from + '→' + i.to).join(', ')).join(' | ')); }
+}
+console.log('lažna opozorila na pravilnih vzorcih:', fp);
+// b) znane napake morajo biti najdene
+const probe = 'ce nemore placati nujnih stroskov, naprimer hrane. Zakon pravi da vsak potrebuje denar in in elektriko.Podjetje kupuje prevec , ker se more odlociti stem kupit dokonca';
+const Lp = checkLang(probe, true);
+const flat = Lp.groups.flatMap(g => g.items.map(i => i.from + '→' + i.to));
+const want = ['nemore→ne more', 'naprimer→na primer', 'stem→s tem', 'dokonca→do konca', 'kupit→kupiti', 'se more→se mora', 'in in→in'];
+let miss = want.filter(w => !flat.includes(w));
+console.log('znane napake najdene:', want.length - miss.length + '/' + want.length, miss.length ? '| manjka: ' + miss.join(', ') : '');
+// c) prikaz za prave odgovore
+const real2 = JSON.parse(fs.readFileSync(path.join(__dirname, 'tests', 'real.json'), 'utf8'));
+for (const r of real2.slice(0, 9)) {
+  const L = checkLang(r.text, false);
+  console.log('Q' + r.n + ' (' + r.note + '): ' + L.total + ' opozoril');
+  L.groups.forEach(g => console.log('   ' + g.title + ': ' + g.items.map(i => i.from + ' → ' + i.to).join(' ; ')));
+}
+console.log('--- 8) pravopis s slovenskim slovarjem ---');
+const vm = require('vm'), zlib = require('zlib');
+const spellSrc = fs.readFileSync(path.join(dir, 'spell.js'), 'utf8');
+const sctx = { window: {}, TextDecoder, console };
+vm.createContext(sctx); vm.runInContext(spellSrc, sctx);
+const unz = b64 => zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('utf8');
+const t0 = Date.now();
+setSpell(sctx.window.__nspell(unz(sctx.window.SPELL_DATA.aff), unz(sctx.window.SPELL_DATA.dic)));
+console.log('slovar naložen v', Date.now() - t0, 'ms');
+// a) pravilni vzorci
+let fp2 = 0;
+for (const q of QS) {
+  const txt = q.model.map(p => p.replace(/\*\*/g, '').replace(/^• /, '')).join(' ');
+  const L = checkLang(txt, true);
+  if (L.total > 1) { fp2 += L.total; console.log('LAŽNO opozorilo (slovar) pri vpr.', q.n, L.groups.map(g => g.title + ': ' + g.items.map(i => i.from + '→' + i.to).join(', ')).join(' | ')); }
+}
+console.log('lažna opozorila na pravilnih vzorcih (slovar):', fp2);
+// b) znane napake
+const known = { pomebno: 'pomembno', vrednsoti: 'vrednosti', ljudji: 'ljudje', eletrika: 'elektrika', trgovniah: 'trgovinah', zakonistost: 'zakonitost', ekonomskiga: 'ekonomskega', kolko: 'koliko', prmer: 'primer', zmanka: 'zmanjka', oportunetnimi: 'oportunitetnimi' };
+const sentence = 'Moj odgovor je ' + Object.keys(known).join(' in ') + ' tukaj.';
+const Lk = checkLang(sentence, true);
+const typos = Lk.groups.filter(g => g.k === 'typo').flatMap(g => g.items);
+let found = 0;
+const missK = [];
+for (const [w, c] of Object.entries(known)) {
+  const it = typos.find(i => i.from === w);
+  if (it && it.to.toLowerCase().includes(c)) found++; else missK.push(w + (it ? '(' + it.to + ')' : ''));
+}
+console.log('pravopisne napake najdene s pravim popravkom:', found + '/' + Object.keys(known).length, missK.length ? '| manjka: ' + missK.join(', ') : '');
+// c) šumniki: vklopljeno / izklopljeno
+const dtxt = 'Podjetje mora placati stroskov in zivljenju ni lahko, ce hoces, mores in prevec.';
+const dOn = checkLang(dtxt, true).groups.filter(g => g.k === 'diac').flatMap(g => g.items.map(i => i.from + '→' + i.to));
+const dOff = checkLang(dtxt, false).groups.filter(g => g.k === 'diac').length;
+console.log('šumniki (vklop):', dOn.join(', '), '| ob izklopu skupin:', dOff);
+// d) prikaz za prave odgovore
+for (const r of real2.slice(0, 9)) {
+  const L = checkLang(r.text, true);
+  console.log('Q' + r.n + ' (' + r.note + '): ' + L.total + ' opozoril');
+  L.groups.forEach(g => console.log('   ' + g.title + ' [' + g.items.length + ']: ' + g.items.slice(0, 10).map(i => i.from + ' → ' + i.to).join(' ; ')));
+}

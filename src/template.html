@@ -61,6 +61,7 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
 </head>
 <body>
 <div class="wrap" id="app"></div>
+<script>/*SPELL*/</script>
 <script>
 const QS = /*QS_JSON*/;
 const BUILD = '/*BUILD*/';
@@ -70,12 +71,16 @@ const TOPICS_ORDER = [...new Set(QS.map(q => q.topic))];
 function any(...r){ return {t:'any', r}; }
 function all(...r){ return {t:'all', r}; }
 function items(min, ...r){ return {t:'items', min, r}; }
+// tier(strogo, mehko): polne točke, če je misel povedana neposredno; pol točke, če samo posredno
+function tier(a, b){ return {t:'tier', a, b}; }
 function any_(...r){ return new RegExp(r.map(x => x.source).join('|')); }
 /*CRITERIA*/
 
 // ---------- ocenjevanje ----------
 function norm(s){
-  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/naprimer/g,'na primer').replace(/\bv (vsakem|tem|nasprotnem|vsaki|takem|nasem) primeru\b/g,'').replace(/\s+/g,' ').trim();
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/naprimer/g,'na primer').replace(/\bv (vsakem|tem|nasprotnem|vsaki|takem|nasem) primeru\b/g,'')
+    .replace(/\bne(more|moremo|morem|morejo|vem|vemo|dela|delajo|zna|znajo|bom|bodo|bi|smemo|hocem|hoce|hocejo)\b/g,'ne $1')
+    .replace(/\bne (potrebn|smiseln|racionaln|gospodarn|ekonomicn)/g,'ne$1').replace(/\s+/g,' ').trim();
 }
 // ---------- tipkarske napake, sopomenke, vsebinska podobnost ----------
 function toks(t){ return t.split(/[^a-z0-9]+/).filter(Boolean); }
@@ -101,14 +106,28 @@ function buildIdx(){
   });
   const pref = {};
   Object.keys(freq).forEach(w => { if(w.length >= 7){ const p = w.slice(0, 9); if(!pref[p] || freq[w] > freq[pref[p]]) pref[p] = w; } });
-  _IDX = {freq, df, pref, keys: Object.keys(pref), shorts: Object.keys(freq).filter(w => w.length >= 5 && w.length <= 7)};
+  // slovar šumnikov: normalizirana beseda -> najpogostejši zapis s šumniki iz vzorčnih odgovorov
+  const dc = {}, pc = {};
+  QS.forEach(q => {
+    const ws = (q.model.join(' ') + ' ' + q.question + ' ' + q.title).toLowerCase().match(/[a-zčšžćđ]+/g) || [];
+    ws.forEach(w => { const n = norm(w); if(n === w) pc[n] = (pc[n] || 0) + 1; else { dc[n] = dc[n] || {}; dc[n][w] = (dc[n][w] || 0) + 1; } });
+  });
+  const dmap = {};
+  Object.keys(dc).forEach(n => {
+    const best = Object.keys(dc[n]).sort((x, y) => dc[n][y] - dc[n][x])[0];
+    if(dc[n][best] > (pc[n] || 0)) dmap[n] = best;
+  });
+  // besede iz gradiva (s šumniki) veljajo za pravilne, tudi če jih slovar ne pozna (strokovni izrazi)
+  const allow = new Set();
+  QS.forEach(q => { ((q.model.join(' ') + ' ' + q.question + ' ' + q.title).toLowerCase().match(/[a-zčšžćđ]+/g) || []).forEach(w => allow.add(w)); });
+  _IDX = {allow, allowList: Array.from(allow).filter(w => w.length >= 4), freq, df, pref, dmap, keys: Object.keys(pref), shorts: Object.keys(freq).filter(w => w.length >= 5 && w.length <= 7), all: Object.keys(freq).filter(w => w.length >= 5)};
   return _IDX;
 }
-// Popravi tipkarske napake pri daljših besedah (7+ črk) na najbližjo besedo iz slovarja vprašanj in odgovorov.
-function fixTypos(t){
+// Popravi tipkarsko napako ene (normalizirane) besede na najbližjo besedo iz slovarja vprašanj in odgovorov.
+function fixWord(w){
   const I = buildIdx();
-  const out = t.replace(/[a-z]{7,}/g, w => {
-    if(I.freq[w]) return w;
+  if(w.length < 5 || I.freq[w]) return w;
+  if(w.length >= 7){
     const p = w.slice(0, 9);
     if(I.pref[p]) return w; // znana beseda v drugem sklonu
     let best = null, bd = 2;
@@ -118,19 +137,16 @@ function fixTypos(t){
       if(d < bd){ bd = d; best = k; }
     }
     return best ? I.pref[best] : w;
-  });
-  // krajše besede (5-6 črk): popravi samo, če se ujemata prva in zadnja črka in je razlika ena napaka
-  return out.replace(/\b[a-z]{5,6}\b/g, w => {
-    if(I.freq[w]) return w;
-    let best = null, bf = -1;
-    for(const s of I.shorts){
-      if(s[0] !== w[0] || s[s.length - 1] !== w[w.length - 1] || Math.abs(s.length - w.length) > 1) continue;
-      if(osa(w, s) === 1 && I.freq[s] > bf){ best = s; bf = I.freq[s]; }
-    }
-    return best || w;
-  });
+  }
+  // krajše besede (5-6 črk): samo če se ujemata prva in zadnja črka in je razlika ena napaka
+  let best = null, bf = -1;
+  for(const s of I.shorts){
+    if(s[0] !== w[0] || s[s.length - 1] !== w[w.length - 1] || Math.abs(s.length - w.length) > 1) continue;
+    if(osa(w, s) === 1 && I.freq[s] > bf){ best = s; bf = I.freq[s]; }
+  }
+  return best || w;
 }
-// Sopomenke: če se v odgovoru pojavi zapis, ki pomeni isto, dodamo kanonično besedo, ki jo iščejo merila.
+function fixTypos(t){ return t.replace(/[a-z]{5,}/g, w => fixWord(w)); }// Sopomenke: če se v odgovoru pojavi zapis, ki pomeni isto, dodamo kanonično besedo, ki jo iščejo merila.
 const SYN = [
   [/\b(izgub\w*|zrtvuj\w*|zrtvova\w*|odrec\w*|odpovedat\w*|odpovedujem|ne morem imet\w*|ne bom imel\w*)/, 'odpovem odpoved'],
   [/\b(ni dovolj|premalo|primanjkuj\w*|primanjkljaj\w*|pomanjkanj\w*|zmanjkuj\w*|zmanjka|nimamo dovolj|ne moremo (imeti|kupiti|imet|kupit) vsega|vsega ne moremo)/, 'omejen redk premalo'],
@@ -143,6 +159,16 @@ const SYN = [
   [/\b(odpisuj\w*|odpisemo|odpis\w*|razporedi\w*|razporeja\w*)/, 'razporedi amortizacij'],
   [/\b(budzet\w*|prorac\w*)/, 'prorac'],
   [/\b(firm\w*|podjetnik\w*|delodajal\w*|tovarn\w*)/, 'podjetj'],
+  [/\bskupn\w* koristnost\w*/, 'celotna koristnost'],
+  [/\bstaln\w* strosk\w*/, 'fiksni strosek'],
+  [/\bspremenljiv\w* strosk\w*/, 'variabilni strosek'],
+  [/\b(obratna sredstva|kratkorocna sredstva)\b/, 'gibljiva sredstva'],
+  [/\b(osnovna sredstva)\b/, 'stalna sredstva'],
+  [/\b(tocka preloma|break even)\b/, 'prag rentabilnosti'],
+  [/\bdonosnost\w*/, 'rentabilnost'],
+  [/\bgospodarnost\w*/, 'ekonomicnost'],
+  [/\bkonzumn\w* dobrin\w*/, 'potrosne dobrine'],
+  [/\binvesticijsk\w* dobrin\w*/, 'kapitalne dobrine'],
   [/\b(razlicn\w*|drugacn\w*|ni isto|ni enak\w*|vsak (po )?svoje|vsak drugace)/, 'razlicn'],
   [/\b(nacrtuj\w*|nacrtova\w*|premisl\w*|pametno)/, 'nacrtn premisljen'],
 ];
@@ -183,6 +209,7 @@ function stripQuestion(t, n){
   return uw.filter((w, i) => !drop[i]).join(' ');
 }
 function evalSpec(sp, t){
+  if(sp.t === 'tier') return evalSpec(sp.a, t) >= 1 ? 1 : (evalSpec(sp.b, t) >= 1 ? 0.5 : 0);
   if(sp.t === 'any') return sp.r.some(x => hit(x, t)) ? 1 : 0;
   if(sp.t === 'all'){ const k = sp.r.filter(x => hit(x, t)).length; return k === sp.r.length ? 1 : k / sp.r.length * 0.5; }
   const n = sp.r.filter(x => hit(x, t)).length;
@@ -195,7 +222,7 @@ function evalSpec(sp, t){
   const cr = CR[n] || [];
   const tot = cr.reduce((a, x) => a + x[0], 0) || 1;
   // "Slogovna" merila (primer, mnenje) štejejo samo, če je odgovor vsebinsko pokrit.
-  const isStyle = sp => sp.r.includes(EX) || sp.r.includes(OP);
+  const isStyle = sp => !!sp.r && (sp.r.includes(EX) || sp.r.includes(OP));
   const fs = cr.map(([w, label, sp]) => evalSpec(sp, t));
   let ct = 0, cg = 0;
   cr.forEach(([w, label, sp], i) => { if(!isStyle(sp)){ ct += w; cg += w * fs[i]; } });
@@ -210,6 +237,7 @@ function evalSpec(sp, t){
   const sim = simScore(n, t1);
   const simPct = Math.min(1, sim / 0.45) * 100;
   pct = Math.max(pct, 0.6 * pct + 0.4 * simPct);
+  pct = Math.min(pct, 82 + 55 * sim); // ocena ne more biti zelo visoka, če je pokritost vsebine vzorca nizka
   const pen = [];
   for(const [p, label, rx] of (PEN[n] || [])){
     if(rx.test(t)){ pen.push({label, pts: p / tot * 100}); pct -= p / tot * 100; }
@@ -227,8 +255,165 @@ function verdict(p){
   return ['Premalo ali mimo', 'bad'];
 }
 
+// ---------- pravopis in slovnica ----------
+let SPELL = null;
+function setSpell(s){ SPELL = s; }
+function plain(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd'); }
+function diacVariants(lw){
+  const pos = [];
+  for(let i = 0; i < lw.length; i++) if('csz'.includes(lw[i])) pos.push(i);
+  if(!pos.length || pos.length > 7) return [];
+  const map = {c: 'č', s: 'š', z: 'ž'};
+  const out = [];
+  for(let mask = 1; mask < (1 << pos.length); mask++){
+    const ch = lw.split(''); let pc = 0;
+    pos.forEach((p, j) => { if(mask & (1 << j)){ ch[p] = map[lw[p]]; pc++; } });
+    const v = ch.join('');
+    if(SPELL.correct(v)) out.push([v, pc]);
+  }
+  out.sort((a, b) => a[1] - b[1]);
+  return out.map(x => x[0]);
+}
+// Preverjanje besede s slovenskim slovarjem. Vrne null (pravilno) ali {kind: 'typo'|'diac'|'unk', sug: [...]}.
+function dictCheck(w, sentenceStart){
+  const I = buildIdx();
+  const lw = w.toLowerCase();
+  if(w.length < 3) return null;
+  if(/^[A-ZČŠŽ]{2,}$/.test(w)) return null;                 // kratice (EUR, DDV)
+  if(/^[A-ZČŠŽ]/.test(w) && !sentenceStart) return null;    // lastna imena sredi stavka
+  if(I.allow.has(lw)) return null;
+  if(SPELL.correct(w) || SPELL.correct(lw)) return null;
+  const pw = plain(lw);
+  if(lw.length >= 8){ // drug sklon strokovnega izraza (npr. oportunitetnimi)
+    for(const a of I.allowList){
+      if(a.length < 8 || a[0] !== lw[0]) continue;
+      let l = 0; while(l < a.length && l < lw.length && a[l] === lw[l]) l++;
+      if(l >= Math.max(8, Math.min(a.length, lw.length) - 2) && /^(a|e|i|o|u|m|h|ih|im|ega|ema|ami|ov|om|ev|ju|jo|je|ji|ja|mi|ma|nih|nim|nimi|nem|ne|na|no|ni|ki|ke|ka|ko)?$/.test(lw.slice(l))) return null;
+    }
+  }
+  // manjkajoči šumniki: preizkusi vse različice c→č, s→š, z→ž in izberi tiste, ki jih slovar pozna
+  const vs = diacVariants(lw);
+  if(vs.length) return {kind: 'diac', sug: vs.slice(0, 3)};
+  const lower = w === lw;
+  const cands = [];
+  I.allowList.forEach(a => {
+    const pa = plain(a);
+    if(pa[0] !== pw[0] || Math.abs(pa.length - pw.length) > 2) return;
+    const d = osa(pw, pa);
+    if(d <= (pw.length >= 9 ? 2 : 1)) cands.push([a, d, 0]);
+  });
+  SPELL.suggest(w).slice(0, 8).forEach((s, i) => {
+    const ps = plain(s);
+    if(ps[0] !== pw[0]) return;                                   // napake so redko na prvi črki
+    if(lower && s !== s.toLowerCase()) return;                    // ne predlagaj lastnih imen
+    const d = osa(pw, ps);
+    if(d <= (pw.length >= 9 ? 2 : 1)) cands.push([s, d, 1 + i]);
+  });
+  if(!cands.length) return {kind: 'unk', sug: []};
+  cands.sort((x, y) => x[1] - y[1] || x[2] - y[2]);
+  const sug = [], sl = new Set(); cands.forEach(c => { const k = c[0].toLowerCase(); if(!sl.has(k)){ sl.add(k); sug.push(c[0]); } });
+  return {kind: plain(cands[0][0]) === pw ? 'diac' : 'typo', sug: sug.slice(0, 3)};
+}
+// Predlog popravka za PRIKAZ uporabniku: strožje kot popravljanje pri ocenjevanju (ne označuje drugih sklonov iste besede).
+function typoSuggest(n){
+  const I = buildIdx();
+  if(n.length < 5 || I.freq[n]) return null;
+  const lim = n.length >= 10 ? 2 : 1; // pri krajših besedah samo ena napaka
+  let best = null, bd = 99;
+  for(const c of I.all){
+    if(c[0] !== n[0] || Math.abs(c.length - n.length) > lim) continue;
+    const d = osa(n, c);
+    if(d > lim) continue;
+    if(d < bd || (d === bd && I.freq[c] > I.freq[best])){ bd = d; best = c; }
+  }
+  if(!best) return null;
+  // pri krajših besedah ne predlagamo zamenjave ene črke z drugo (npr. vedeti/videti sta obe pravilni besedi)
+  const srt = s => s.split('').sort().join('');
+  if(n.length <= 6 && best.length === n.length && srt(n) !== srt(best)) return null;
+  let lcp = 0; while(lcp < n.length && lcp < best.length && n[lcp] === best[lcp]) lcp++;
+  const sh = Math.min(n.length, best.length);
+  if(lcp >= sh - (sh >= 7 ? 2 : 1)) return null; // razlika samo v končnici: verjetno drug sklon ali oblika
+  return best;
+}
+const NE_JOIN = /^ne(more|moremo|morem|morejo|vem|vemo|dela|delajo|zna|znajo|bom|bodo|bi|smemo|hocem|hoce|hocejo)$/;
+const ABBR = new Set(['npr','itd','tj','oz','tm','ca','st','dr','ipd','sl','tel','prim','gl','t']);
+const COLL = {kupit:'kupiti', delat:'delati', dat:'dati', placat:'plačati', izbirat:'izbirati', vedet:'vedeti', imet:'imeti', prodat:'prodati', ucit:'učiti', izkoristit:'izkoristiti', uporabit:'uporabiti', razmisljat:'razmišljati', pocivat:'počivati', porabit:'porabiti', zadovoljit:'zadovoljiti', dobit:'dobiti', rabit:'rabiti', pogledat:'pogledati', planirat:'planirati', organizirat:'organizirati', spit:'spiti'};
+const GROUPS = [['typo','Pravopisne (tipkarske) napake'], ['ne','Zapis »ne« in zlepljene besede'], ['coll','Pogovorni zapisi'], ['punct','Ločila'], ['gram','Slovnica in stavki'], ['diac','Šumniki (č, š, ž)']];
+function capFirst(w){ return w.charAt(0).toUpperCase() + w.slice(1); }
+function checkLang(text, diac){
+  const I = buildIdx();
+  const out = {typo: [], ne: [], coll: [], punct: [], gram: [], diac: []};
+  const seen = new Set();
+  const add = (k, from, to, why) => { const key = k + '|' + from + '|' + to; if(seen.has(key)) return; seen.add(key); out[k].push({from, to, why}); };
+  const showD = n => I.dmap[n] || n;
+  const re = /[A-Za-zČŠŽčšžĆćĐđ]+/g; let m; const T = [];
+  while((m = re.exec(text))) T.push({w: m[0], n: plain(m[0]), i: m.index, e: m.index + m[0].length});
+  T.forEach((t, k) => {
+    const n = t.n;
+    const prev = k > 0 ? T[k - 1] : null, next = k + 1 < T.length ? T[k + 1] : null;
+    if(NE_JOIN.test(n)) add('ne', t.w, 'ne ' + t.w.slice(2), '»ne« se z glagolom piše ločeno');
+    else if(n === 'naprimer') add('ne', t.w, 'na primer', 'piše se ločeno');
+    else if(n === 'stem') add('ne', t.w, 's tem', 'piše se ločeno');
+    else if(n === 'dokonca') add('ne', t.w, 'do konca', 'piše se ločeno');
+    else if(COLL[n]) add('coll', t.w, COLL[n], 'nedoločnik se konča na -ti');
+    else if(n.length >= 4 && /(it|at|et)$/.test(n) && !I.freq[n] && I.freq[n + 'i']) add('coll', t.w, showD(n + 'i'), 'nedoločnik se konča na -ti');
+    else if(SPELL){
+      const ss = /(^|[.!?]\s+)$/.test(text.slice(0, t.i));
+      const r = dictCheck(t.w, ss);
+      if(r){
+        const cap = /^[A-ZČŠŽ]/.test(t.w);
+        const sg = r.sug.map(x => cap ? capFirst(x) : x);
+        if(r.kind === 'diac'){ if(diac) add('diac', t.w, sg[0], 'manjka šumnik'); }
+        else if(r.kind === 'typo') add('typo', t.w, sg.join(' / '), 'verjetno tipkarska napaka (preveri)');
+        else if(t.w.length >= 4) add('typo', t.w, '?', 'beseda ni v slovarju (preveri)');
+      }
+    }
+    else { const sg = typoSuggest(n); if(sg) add('typo', t.w, showD(sg), 'verjetno tipkarska napaka (preveri)'); }
+    if(prev && prev.n === 'se' && n === 'more') add('coll', 'se more', 'se mora', 'knjižno: mora');
+    if(next && n === 'ne' && /^(smiseln|potrebn|racionaln|gospodarn|ekonomicn)/.test(next.n) && /^\s+$/.test(text.slice(t.e, next.i))) add('ne', 'ne ' + next.w, 'ne' + next.w, 'ta pridevnik se piše skupaj');
+    if(prev && n === prev.n && n.length > 1 && /^\s+$/.test(text.slice(prev.e, t.i))) add('gram', t.w + ' ' + t.w, t.w, 'ponovljena beseda');
+    if(prev && ['ker', 'ampak', 'saj', 'ceprav', 'kjer', 'ki', 'da'].includes(n)){
+      const between = text.slice(prev.e, t.i);
+      const p = prev.n;
+      const skip = /[,;:.!?(\-–]/.test(between)
+        || (n === 'da' && ['ne', 'in', 'ali', 'ter', 'tudi', 'samo', 'le', 'tako'].includes(p))
+        || (n === 'ki' && ['in', 'ali', 'ter'].includes(p));
+      if(!skip && /^\s+$/.test(between)) add('punct', prev.w + ' ' + t.w, prev.w + ', ' + t.w, 'pred »' + n + '« običajno stoji vejica (preveri)');
+    }
+    if(diac && !SPELL){ const lw = t.w.toLowerCase(); if(lw === n && n.length >= 3 && I.dmap[n] && I.dmap[n] !== lw) add('diac', t.w, I.dmap[n], 'manjka šumnik'); }
+  });
+  let mm;
+  const r1 = /([A-Za-zČŠŽčšž])([,;:])([A-Za-zČŠŽčšž])/g;
+  while((mm = r1.exec(text))) add('punct', mm[0], mm[1] + mm[2] + ' ' + mm[3], 'za ločilom manjka presledek');
+  const r2 = /([a-zčšž])\.([A-ZČŠŽ][a-zčšž])/g;
+  while((mm = r2.exec(text))) add('punct', mm[0], mm[1] + '. ' + mm[2], 'za piko manjka presledek');
+  if(/\.{4,}/.test(text)) add('punct', '....', '...', 'preveč pik (največ tri)');
+  if(/,{2,}/.test(text)) add('punct', ',,', ',', 'podvojena vejica');
+  if(/(^|[^.])\.\.(?!\.)/.test(text)) add('punct', '..', '.', 'dve piki namesto ene');
+  const rs = /(^|[.!?]\s+)([a-zčšž][a-zčšž]*)/g;
+  while((mm = rs.exec(text))){
+    const pos = mm.index;
+    if(pos > 0){
+      if(text[pos - 1] === '.') continue; // tri pike
+      const pw = text.slice(0, pos).match(/([A-Za-zČŠŽčšž]+)$/);
+      if(pw && ABBR.has(norm(pw[1]))) continue;
+    }
+    add('gram', mm[2], capFirst(mm[2]), 'stavek se začne z veliko začetnico');
+  }
+  const tr = text.trim();
+  if(tr.length > 20 && !/[.!?…"»)]$/.test(tr)) add('gram', 'konec odgovora', 'pika', 'stavek se konča s piko');
+  const rc = /([,:;])\s+([A-ZČŠŽ])([a-zčšž]{2,})/g;
+  while((mm = rc.exec(text))){
+    const lw = (mm[2] + mm[3]).toLowerCase();
+    if((I.freq[plain(lw)] || 0) >= 1) add('gram', mm[2] + mm[3], lw, 'po vejici ali dvopičju piši z malo začetnico (preveri)');
+  }
+  const groups = GROUPS.map(([k, title]) => ({k, title, items: out[k]})).filter(g => g.items.length);
+  return {groups, total: groups.reduce((a, g) => a + g.items.length, 0)};
+}
 // ---------- stanje ----------
 let S = {view:'menu', list:[], i:0, session:{}, graded:null};
+let DIAC = true;
+try{ DIAC = localStorage.getItem('ekp_diac') !== '0'; }catch(e){ DIAC = true; }
 let HIST = {};
 try{ HIST = JSON.parse(localStorage.getItem('ekp_hist') || '{}'); }catch(e){ HIST = {}; }
 function saveHist(){ try{ localStorage.setItem('ekp_hist', JSON.stringify(HIST)); }catch(e){} }
@@ -252,6 +437,22 @@ function modelHtml(q){
 }
 function modelText(q){ return q.model.map(p => p.replace(/\*\*/g, '').replace(/^• /, '- ')).join('\n'); }
 
+function langHtml(text){
+  const L = checkLang(text, DIAC);
+  const wait = (!SPELL && SPELL_STATE === 'loading') ? '<div class="note">Slovar slovenščine se še nalaga (nekaj sekund). Preverjanje pravopisa je zaenkrat poenostavljeno in se bo samo osvežilo.</div>' : '';
+  if(!L.total) return wait + '<div class="note">Pravopis in slovnica: program ni našel napak. (Ne najde pa vseh, zato preveri tudi sam.)</div>';
+  let h = wait + '<h2 style="margin-top:14px">Pravopis in slovnica (' + L.total + ')</h2>';
+  L.groups.forEach(g => {
+    h += '<div class="lg"><b>' + esc(g.title) + '</b><ul class="crit">';
+    g.items.slice(0, 15).forEach(it => {
+      h += '<li class="part"><span class="ic">✎</span><span><s>' + esc(it.from) + '</s> → <b>' + esc(it.to) + '</b> <span class="hint">· ' + esc(it.why) + '</span></span></li>';
+    });
+    if(g.items.length > 15) h += '<li><span class="hint">… in še ' + (g.items.length - 15) + '</span></li>';
+    h += '</ul></div>';
+  });
+  h += '<div class="note">Program nima celotnega slovarja in ne najde vseh napak. Pri vejicah »preveri« pomeni, da pravilo ni vedno enako.</div>';
+  return h;
+}
 function bestPct(n){ return HIST[n] ? HIST[n].best : null; }
 
 // ---------- prikazi ----------
@@ -272,7 +473,7 @@ function renderMenu(){
        '<button class="btn sec" data-act="rand10">10 naključnih</button>' +
        '<button class="btn sec" data-act="randall">Vseh ' + QS.length + ' naključno</button>' +
        (weak.length ? '<button class="btn sec" data-act="weak">Ponovi slabe (' + weak.length + ')</button>' : '') +
-       '</div></div>';
+       '</div><label class="hint" style="display:block;margin-top:10px"><input type="checkbox" id="diacT"' + (DIAC ? ' checked' : '') + '> Opozarjaj na manjkajoče šumnike (č, š, ž)</label></div>';
   h += '<div class="card"><h2>Po temah</h2><div class="grid">';
   TOPICS_ORDER.forEach((t, ti) => {
     const qs = QS.filter(q => q.topic === t);
@@ -293,7 +494,7 @@ function renderQuiz(){
   h += '<div class="card"><span class="pill">' + esc(q.topic) + '</span> <span class="pill">vpr. ' + q.n + '</span>';
   h += '<div class="q">' + esc(q.question) + '</div>';
   if(!S.graded){
-    h += '<textarea id="ans" placeholder="Napiši odgovor po svoje. Ctrl+Enter za preverjanje." autofocus></textarea>';
+    h += '<textarea id="ans" spellcheck="true" lang="sl" placeholder="Napiši odgovor po svoje. Ctrl+Enter za preverjanje." autofocus></textarea>';
     h += '<div class="row" style="margin-top:10px"><button class="btn" data-act="check">Preveri odgovor</button><button class="btn sec" data-act="skip">Preskoči</button><button class="btn sec" data-act="peek">Pokaži vzorčni odgovor</button></div>';
     h += '<div class="hint" style="margin-top:8px">Namig: napiši definicijo, razlago, primer in (če vprašanje to zahteva) svoje mnenje.</div>';
     if(S.peek) h += '<div class="model"><b>Vzorčni odgovor</b>' + modelHtml(q) + '</div>';
@@ -310,6 +511,7 @@ function renderQuiz(){
     });
     g.pen.forEach(p => { h += '<li class="pen"><span class="ic">!</span><span>' + esc(p.label) + '</span><span class="pts">−' + Math.round(p.pts * 10) / 10 + '</span></li>'; });
     h += '</ul>';
+    h += langHtml(S.answer || '');
     h += '<div class="model"><b>Vzorčni odgovor</b>' + modelHtml(q) + '</div>';
     h += '<div class="note">Program preverja ključne pojme. Če si bistvo povedal pravilno z drugimi besedami, lahko manjka kakšna točka. Za natančnejši pregled kopiraj odgovor in ga prilepi Claudu.</div>';
     h += '<div class="row"><button class="btn" data-act="next">' + (S.i + 1 < total ? 'Naslednje vprašanje' : 'Rezultat') + '</button><button class="btn sec" data-act="retry">Poskusi znova</button><button class="btn sec" data-act="copy">Kopiraj za Claude</button><span class="hint" id="copied"></span></div>';
@@ -357,7 +559,7 @@ function doCheck(){
 }
 function copyPrompt(){
   const q = S.list[S.i];
-  const msg = 'Preveri moj odgovor na vprašanje za kolokvij (Ekonomika in podjetništvo). Oceni ga v % (točnost, popolnost, razumevanje), povej, kaj je pravilno, kaj manjka ali je napačno, in predlagaj izboljšavo. Pri mnenjih ne išči ene pravilne rešitve, ampak ali je utemeljeno.\n\nVPRAŠANJE (' + q.n + '):\n' + q.question + '\n\nMOJ ODGOVOR:\n' + S.answer + '\n\nREFERENCA (vzorčni odgovor iz mojega gradiva):\n' + modelText(q);
+  const msg = 'Preveri moj odgovor na vprašanje za kolokvij (Ekonomika in podjetništvo). Oceni ga v % (točnost, popolnost, razumevanje), povej, kaj je pravilno, kaj manjka ali je napačno, in predlagaj izboljšavo. Pri mnenjih ne išči ene pravilne rešitve, ampak ali je utemeljeno. Opozori tudi na pravopisne in slovnične napake (šumniki, vejice, zapis »ne«).\n\nVPRAŠANJE (' + q.n + '):\n' + q.question + '\n\nMOJ ODGOVOR:\n' + S.answer + '\n\nREFERENCA (vzorčni odgovor iz mojega gradiva):\n' + modelText(q);
   const done = () => { const el = document.getElementById('copied'); if(el) el.textContent = 'Kopirano. Prilepi v pogovor s Claudom.'; };
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(msg).then(done, () => fallbackCopy(msg, done)); }
   else fallbackCopy(msg, done);
@@ -368,6 +570,24 @@ function fallbackCopy(text, cb){
   document.body.removeChild(ta);
 }
 
+let SPELL_STATE = 'loading';
+async function loadSpell(){
+  try{
+    if(!window.__nspell || !window.SPELL_DATA || typeof DecompressionStream === 'undefined'){ SPELL_STATE = 'error'; return; }
+    const dec = async b64 => {
+      const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      return await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    };
+    const aff = await dec(SPELL_DATA.aff), dic = await dec(SPELL_DATA.dic);
+    setSpell(window.__nspell(aff, dic));
+    SPELL_STATE = 'ready';
+    if(S.view === 'quiz' && S.graded) render();
+  }catch(err){ SPELL_STATE = 'error'; }
+}
+setTimeout(loadSpell, 400);
+$app.addEventListener('change', e => {
+  if(e.target && e.target.id === 'diacT'){ DIAC = e.target.checked; try{ localStorage.setItem('ekp_diac', DIAC ? '1' : '0'); }catch(err){} }
+});
 $app.addEventListener('click', e => {
   const b = e.target.closest('[data-act],[data-topic]'); if(!b) return;
   if(b.dataset.topic !== undefined){ start(QS.filter(q => q.topic === TOPICS_ORDER[+b.dataset.topic]), false); return; }

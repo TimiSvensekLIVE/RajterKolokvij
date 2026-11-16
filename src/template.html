@@ -1,7 +1,8 @@
 <!doctype html>
-<html lang="sl">
+<html lang="sl" translate="no">
 <head>
 <meta charset="utf-8">
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EKP kolokvij: vadba</title>
 <style>
@@ -62,6 +63,7 @@ td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
 <div class="wrap" id="app"></div>
 <script>
 const QS = /*QS_JSON*/;
+const BUILD = '/*BUILD*/';
 const TOPICS_ORDER = [...new Set(QS.map(q => q.topic))];
 
 // ---------- pomočniki za merila ----------
@@ -99,13 +101,13 @@ function buildIdx(){
   });
   const pref = {};
   Object.keys(freq).forEach(w => { if(w.length >= 7){ const p = w.slice(0, 9); if(!pref[p] || freq[w] > freq[pref[p]]) pref[p] = w; } });
-  _IDX = {freq, df, pref, keys: Object.keys(pref)};
+  _IDX = {freq, df, pref, keys: Object.keys(pref), shorts: Object.keys(freq).filter(w => w.length >= 5 && w.length <= 7)};
   return _IDX;
 }
 // Popravi tipkarske napake pri daljših besedah (7+ črk) na najbližjo besedo iz slovarja vprašanj in odgovorov.
 function fixTypos(t){
   const I = buildIdx();
-  return t.replace(/[a-z]{7,}/g, w => {
+  const out = t.replace(/[a-z]{7,}/g, w => {
     if(I.freq[w]) return w;
     const p = w.slice(0, 9);
     if(I.pref[p]) return w; // znana beseda v drugem sklonu
@@ -116,6 +118,16 @@ function fixTypos(t){
       if(d < bd){ bd = d; best = k; }
     }
     return best ? I.pref[best] : w;
+  });
+  // krajše besede (5-6 črk): popravi samo, če se ujemata prva in zadnja črka in je razlika ena napaka
+  return out.replace(/\b[a-z]{5,6}\b/g, w => {
+    if(I.freq[w]) return w;
+    let best = null, bf = -1;
+    for(const s of I.shorts){
+      if(s[0] !== w[0] || s[s.length - 1] !== w[w.length - 1] || Math.abs(s.length - w.length) > 1) continue;
+      if(osa(w, s) === 1 && I.freq[s] > bf){ best = s; bf = I.freq[s]; }
+    }
+    return best || w;
   });
 }
 // Sopomenke: če se v odgovoru pojavi zapis, ki pomeni isto, dodamo kanonično besedo, ki jo iščejo merila.
@@ -269,6 +281,7 @@ function renderMenu(){
   });
   h += '</div></div>';
   if(done) h += '<div class="row"><button class="btn sec sm" data-act="reset">Pobriši zgodovino</button></div>';
+  h += '<p class="hint" style="margin-top:16px">Različica ocenjevanja: ' + BUILD + '</p>';
   $app.innerHTML = h;
 }
 

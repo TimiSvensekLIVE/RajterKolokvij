@@ -3,6 +3,7 @@
 // c(utež, 'kaj mora odgovor povedati', any(...) | all(...) | items(min, ...))
 const c = (w, label, spec) => [w, label, spec];
 const EX = /\b(primer|primeru|primere|npr|recimo|denimo)\b|\bce (grem|imam|kupim|vzamem|podjetje|nek|jem|pijem|dobim|kupujem|prodamo|vzamemo|proizvajamo|bi)\b|\bnamesto da\b|\bpri (pohistv|pekar|studen|kmet)\w*/;
+const RS = /\b(ker|zato|saj|zaradi|da (ne|nam|nismo|bi|bomo|mu ga ne))\b/;
 const OP = /\b(po mojem|menim|mislim|moje mnenje|se mi zdi|izbral bi|bi izbral|bi se odlocil|jaz bi|osebno|po moje|izberem|moja izbira|bolj bi|raje bi|sam bi|se strinjam|mnenj\w*)\b/;
 
 const CR = {
@@ -10,7 +11,7 @@ const CR = {
     c(2, 'omejena sredstva (denar, čas) in veliko potreb/želja', all(any_(/omejen/, /premalo/, /ni dovolj/, /nimamo/), any_(/potreb/, /zelj/, /zelim/))),
     c(2, 'ekonomsko razmišljanje v vsakdanu: proračun, izbira, varčevanje, primerjanje cen, nakupi', any(/prorac/, /odlocan/, /izbir/, /nacrtova/, /varc/, /primerja\w* cen/, /gospodar/, /kupuj|nakup|kupil/, /placa/, /denar/)),
     c(2, 'konkreten primer', any(EX)),
-    c(1.5, 'lastno mnenje z razlogom', any(OP)),
+    c(1.5, 'lastno mnenje z razlogom (zakaj je to pomembno)', any(OP, RS)),
   ],
   2: [
     c(3, 'gospodarjenje = umno, načrtno, premišljeno pridobivanje in uporaba dobrin/sredstev za potrebe', all(any_(/umn/, /nacrtn/, /premisl/, /premisljen/, /smotrn/, /racionaln/, /pametn/), /(dobrin|sredstv|potreb|denar)/)),

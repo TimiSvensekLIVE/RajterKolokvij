@@ -7,6 +7,7 @@ const crit = fs.readFileSync(path.join(src, 'criteria.js'), 'utf8');
 const tpl = fs.readFileSync(path.join(src, 'template.html'), 'utf8');
 const html = tpl
   .replace('/*QS_JSON*/', () => JSON.stringify(qs))
-  .replace('/*CRITERIA*/', () => crit);
+  .replace('/*CRITERIA*/', () => crit)
+  .replace('/*BUILD*/', () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' '));
 fs.writeFileSync(path.join(__dirname, 'index.html'), html, 'utf8');
 console.log('index.html zgrajen:', qs.length, 'vprašanj,', html.length, 'bajtov');

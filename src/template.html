@@ -73,17 +73,113 @@ function any_(...r){ return new RegExp(r.map(x => x.source).join('|')); }
 
 // ---------- ocenjevanje ----------
 function norm(s){
-  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/\s+/g,' ').trim();
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/naprimer/g,'na primer').replace(/\bv (vsakem|tem|nasprotnem|vsaki|takem|nasem) primeru\b/g,'').replace(/\s+/g,' ').trim();
+}
+// ---------- tipkarske napake, sopomenke, vsebinska podobnost ----------
+function toks(t){ return t.split(/[^a-z0-9]+/).filter(Boolean); }
+function stem5(w){ return w.length >= 5 ? w.slice(0, 5) : w; }
+function osa(a, b){ // Damerau-Levenshtein (zamenjava sosednjih črk šteje kot 1 napaka)
+  const al = a.length, bl = b.length; if(!al) return bl; if(!bl) return al;
+  const d = []; for(let i = 0; i <= al; i++) d[i] = [i]; for(let j = 1; j <= bl; j++) d[0][j] = j;
+  for(let i = 1; i <= al; i++) for(let j = 1; j <= bl; j++){
+    d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    if(i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1]) d[i][j] = Math.min(d[i][j], d[i-2][j-2] + 1);
+  }
+  return d[al][bl];
+}
+let _IDX = null;
+function buildIdx(){
+  if(_IDX) return _IDX;
+  const freq = {}, df = {};
+  QS.forEach(q => {
+    const seen = new Set();
+    toks(norm(q.model.join(' '))).forEach(w => { freq[w] = (freq[w] || 0) + 1; if(w.length >= 5) seen.add(stem5(w)); });
+    toks(norm(q.question + ' ' + q.title)).forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+    seen.forEach(s => { df[s] = (df[s] || 0) + 1; });
+  });
+  const pref = {};
+  Object.keys(freq).forEach(w => { if(w.length >= 7){ const p = w.slice(0, 9); if(!pref[p] || freq[w] > freq[pref[p]]) pref[p] = w; } });
+  _IDX = {freq, df, pref, keys: Object.keys(pref)};
+  return _IDX;
+}
+// Popravi tipkarske napake pri daljših besedah (7+ črk) na najbližjo besedo iz slovarja vprašanj in odgovorov.
+function fixTypos(t){
+  const I = buildIdx();
+  return t.replace(/[a-z]{7,}/g, w => {
+    if(I.freq[w]) return w;
+    const p = w.slice(0, 9);
+    if(I.pref[p]) return w; // znana beseda v drugem sklonu
+    let best = null, bd = 2;
+    for(const k of I.keys){
+      if(k[0] !== w[0] || Math.abs(k.length - p.length) > 1) continue;
+      const d = osa(p, k);
+      if(d < bd){ bd = d; best = k; }
+    }
+    return best ? I.pref[best] : w;
+  });
+}
+// Sopomenke: če se v odgovoru pojavi zapis, ki pomeni isto, dodamo kanonično besedo, ki jo iščejo merila.
+const SYN = [
+  [/\b(izgub\w*|zrtvuj\w*|zrtvova\w*|odrec\w*|odpovedat\w*|odpovedujem|ne morem imet\w*|ne bom imel\w*)/, 'odpovem odpoved'],
+  [/\b(ni dovolj|premalo|primanjkuj\w*|primanjkljaj\w*|pomanjkanj\w*|zmanjkuj\w*|zmanjka|nimamo dovolj|ne moremo (imeti|kupiti|imet|kupit) vsega|vsega ne moremo)/, 'omejen redk premalo'],
+  [/\b(zasluz\w*|profit\w*)/, 'dobicek'],
+  [/\b(zguba|dela izgubo|delamo izgubo|v minusu)\b/, 'izguba'],
+  [/\b(drug\w* (moznost|opcij\w*|stvar\w*|izbir\w*|variant\w*)|opcij\w*|variant\w*)/, 'alternativ'],
+  [/\b(kupec|kupci|kupcev|stranke|strank|odjemalc\w*|porabnik\w*)/, 'kupc potrosnik'],
+  [/\b(posojil\w*|kredit\w*|zadolz\w*|dolgov\w*)/, 'dolg zadolz posojil'],
+  [/\b(obrabi\w*|obrabl\w*|izrabl\w*|zastarel\w*|zastar\w*)/, 'obrab zastaran'],
+  [/\b(odpisuj\w*|odpisemo|odpis\w*|razporedi\w*|razporeja\w*)/, 'razporedi amortizacij'],
+  [/\b(budzet\w*|prorac\w*)/, 'prorac'],
+  [/\b(firm\w*|podjetnik\w*|delodajal\w*|tovarn\w*)/, 'podjetj'],
+  [/\b(razlicn\w*|drugacn\w*|ni isto|ni enak\w*|vsak (po )?svoje|vsak drugace)/, 'razlicn'],
+  [/\b(nacrtuj\w*|nacrtova\w*|premisl\w*|pametno)/, 'nacrtn premisljen'],
+];
+function augment(t){
+  let extra = '';
+  for(const [rx, add] of SYN) if(rx.test(t)) extra += ' ' + add;
+  return extra ? t + ' ' + extra : t;
+}
+// Delež "značilnih" besed vzorčnega odgovora (brez besed iz vprašanja in preveč splošnih), ki jih odgovor vsebuje.
+function simScore(n, t){
+  const I = buildIdx();
+  const q = QS.find(x => x.n === n); if(!q) return 0;
+  const qs = new Set(toks(norm(q.question + ' ' + q.title)).filter(w => w.length >= 5).map(stem5));
+  const ms = new Set();
+  toks(norm(q.model.join(' '))).forEach(w => {
+    if(w.length < 5) return;
+    const s = stem5(w);
+    if(!qs.has(s) && (I.df[s] || 0) / QS.length <= 0.3) ms.add(s);
+  });
+  if(!ms.size) return 0;
+  const us = new Set(toks(t).filter(w => w.length >= 5).map(stem5));
+  let hit = 0; ms.forEach(s => { if(us.has(s)) hit++; });
+  return hit / ms.size;
+}
+function hit(x, t){ return x instanceof RegExp ? x.test(t) : evalSpec(x, t) >= 1; }
+// Odstrani dele odgovora, ki so prepisani iz vprašanja (5 ali več besed zapored), da prepisano vprašanje ne šteje kot znanje.
+function stripQuestion(t, n){
+  const q = QS.find(x => x.n === n); if(!q) return t;
+  const qt = toks(norm(q.question));
+  const grams = new Set();
+  for(let i = 0; i + 5 <= qt.length; i++) grams.add(qt.slice(i, i + 5).join(' '));
+  const uw = t.split(' ');
+  const cw = uw.map(w => w.replace(/[^a-z0-9]/g, ''));
+  const drop = new Array(uw.length).fill(false);
+  for(let i = 0; i + 5 <= uw.length; i++){
+    if(grams.has(cw.slice(i, i + 5).join(' '))) for(let k = i; k < i + 5; k++) drop[k] = true;
+  }
+  return uw.filter((w, i) => !drop[i]).join(' ');
 }
 function evalSpec(sp, t){
-  if(sp.t === 'any') return sp.r.some(x => x.test(t)) ? 1 : 0;
-  if(sp.t === 'all') return sp.r.every(x => x.test(t)) ? 1 : 0;
-  const n = sp.r.filter(x => x.test(t)).length;
+  if(sp.t === 'any') return sp.r.some(x => hit(x, t)) ? 1 : 0;
+  if(sp.t === 'all'){ const k = sp.r.filter(x => hit(x, t)).length; return k === sp.r.length ? 1 : k / sp.r.length * 0.5; }
+  const n = sp.r.filter(x => hit(x, t)).length;
   return Math.min(1, n / sp.min);
-}
-function grade(n, text){
-  const t = norm(text);
-  const words = t ? t.split(' ').length : 0;
+}function grade(n, text){
+  const t0 = stripQuestion(norm(text), n);
+  const words = t0 ? t0.split(' ').length : 0;
+  const t1 = fixTypos(t0);
+  const t = augment(t1);
   const cr = CR[n] || [];
   const tot = cr.reduce((a, x) => a + x[0], 0) || 1;
   // "Slogovna" merila (primer, mnenje) štejejo samo, če je odgovor vsebinsko pokrit.
@@ -91,7 +187,7 @@ function grade(n, text){
   const fs = cr.map(([w, label, sp]) => evalSpec(sp, t));
   let ct = 0, cg = 0;
   cr.forEach(([w, label, sp], i) => { if(!isStyle(sp)){ ct += w; cg += w * fs[i]; } });
-  const gate = ct ? Math.min(1, (cg / ct) / 0.5) : 1;
+  const gate = ct ? Math.max(0, Math.min(1, ((cg / ct) - 0.15) / 0.45)) : 1;
   let got = 0; const res = [];
   cr.forEach(([w, label, sp], i) => {
     const f = isStyle(sp) ? fs[i] * gate : fs[i];
@@ -99,6 +195,9 @@ function grade(n, text){
     res.push({label, f, pts: w / tot * 100});
   });
   let pct = got / tot * 100;
+  const sim = simScore(n, t1);
+  const simPct = Math.min(1, sim / 0.45) * 100;
+  pct = Math.max(pct, 0.6 * pct + 0.4 * simPct);
   const pen = [];
   for(const [p, label, rx] of (PEN[n] || [])){
     if(rx.test(t)){ pen.push({label, pts: p / tot * 100}); pct -= p / tot * 100; }
@@ -106,7 +205,7 @@ function grade(n, text){
   let short = false;
   if(words < 12){ pct *= 0.5; short = true; }
   pct = Math.max(0, Math.min(100, Math.round(pct)));
-  return {pct, res, pen, words, short};
+  return {pct, res, pen, words, short, sim};
 }
 function verdict(p){
   if(p >= 85) return ['Odlično', 'good'];
@@ -187,7 +286,7 @@ function renderQuiz(){
     if(S.peek) h += '<div class="model"><b>Vzorčni odgovor</b>' + modelHtml(q) + '</div>';
   } else {
     const g = S.graded; const [vt, vc] = verdict(g.pct);
-    h += '<div class="score"><div class="pct ' + vc + '">' + g.pct + ' %</div><div><div class="verdict">' + vt + '</div><div class="hint">' + g.words + ' besed' + (g.short ? ' · odgovor je prekratek, ocena je prepolovljena' : '') + '</div></div></div>';
+    h += '<div class="score"><div class="pct ' + vc + '">' + g.pct + ' %</div><div><div class="verdict">' + vt + '</div><div class="hint">' + g.words + ' besed' + (g.short ? ' · odgovor je prekratek, ocena je prepolovljena' : '') + ' · pokritost vsebine vzorca ' + Math.round(g.sim * 100) + ' %' + '</div></div></div>';
     h += '<div class="bar"><i style="width:' + g.pct + '%;background:var(--' + (vc === 'good' ? 'good' : vc === 'mid' ? 'mid' : 'bad') + ')"></i></div>';
     h += '<h2 style="margin-top:14px">Razčlenitev po merilih</h2><ul class="crit">';
     g.res.forEach(r => {

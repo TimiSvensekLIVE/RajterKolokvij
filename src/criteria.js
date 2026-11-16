@@ -1,0 +1,208 @@
+// Merila ocenjevanja. Vzorci so brez šumnikov (besedilo se pred preverjanjem normalizira).
+// c(utež, 'kaj mora odgovor povedati', any(...) | all(...) | items(min, ...))
+const c = (w, label, spec) => [w, label, spec];
+const EX = /\b(primer|primeru|primere|npr|recimo|denimo)\b|\bce (grem|imam|kupim|vzamem|podjetje|nek)/;
+const OP = /\b(po mojem|menim|mislim|moje mnenje|se mi zdi|izbral bi|bi izbral|bi se odlocil|jaz bi|osebno|po moje|izberem|moja izbira|mnenj\w*)\b/;
+
+const CR = {
+  1: [
+    c(2, 'omejena sredstva (denar, čas) in veliko potreb/želja', all(/omejen/, /(potreb|zelj)/)),
+    c(2, 'ekonomsko razmišljanje v vsakdanu: proračun, izbira, varčevanje, primerjanje cen', any(/prorac/, /odlocan/, /izbir/, /nacrtova/, /varcev/, /primerja\w* cen/, /gospodar/)),
+    c(2, 'konkreten primer', any(EX)),
+    c(1.5, 'lastno mnenje z razlogom', any(OP)),
+  ],
+  2: [
+    c(3, 'gospodarjenje = umno, načrtno, premišljeno pridobivanje in uporaba dobrin/sredstev za potrebe', all(any_(/umn/, /nacrtn/, /premisljen/, /smotrn/, /racionaln/), /(dobrin|sredstv|potreb)/)),
+    c(1.5, 'zakaj načrtno: sredstva so omejena/redka', any(/omejen/, /redk/, /ni dovolj/)),
+    c(1.5, 'posledice za posameznika (dolgovi, zmanjka denarja, brez prihrankov)', any(/dolg/, /brez prihrank/, /zmanjka/, /revsc/, /ne more (pokrit|placat)/, /prihrank/)),
+    c(1.5, 'posledice za podjetje (izguba, stečaj, nepotrebni stroški, slabša konkurenčnost)', any(/izgub/, /stecaj/, /nepotrebn\w* strosk/, /konkurencn/, /propad/, /nelikvid/, /zaloge/, /potrat/)),
+  ],
+  3: [
+    c(2, 'povezava: ekonomika proučuje, kako z omejenimi sredstvi zadovoljiti potrebe', all(/omejen/, /potreb/)),
+    c(2, 'odgovor DA: tudi bogato podjetje lahko posluje negospodarno', any(/negospodarn/, /\bda[,.!]/, /\bda,? (tudi )?(bogato |veliko )?(podjetje )?lahko/, /lahko (tudi )?posluje (slabo|negospodarno)/)),
+    c(2, 'razlog: gospodarnost ni velikost denarja, ampak razmerje učinki/stroški (ekonomičnost), potrata, slabe naložbe', any(/ekonomicnost/, /razmerje/, /ucink\w* (in|proti|do) strosk/, /potrat/, /slab\w* nalozb/, /neizkoris/, /nepotrebn/)),
+    c(2, 'primer', any(EX)),
+  ],
+  4: [
+    c(2, 'redkost = dobrin/virov je premalo glede na potrebe', any(/premalo/, /ni dovolj/, /omejen\w* (viri|dobrin|sredstva|vir)/, /redkost je/)),
+    c(2, 'zato moramo izbirati (izbira, prioritete, oportunitetni strošek)', any(/izbir/, /oportunitet/, /prioritet/, /odpoved/)),
+    c(2, 'kako se kaže v podjetju (omejen kapital, čas, delavci, zmogljivosti)', all(/podjetj/, /(kapital|cas|delavc|zmogljiv|sredstv|prorac)/)),
+    c(2, 'kako se kaže pri posamezniku (omejen proračun/čas)', any(/posameznik/, /prorac/, /student/, /telefon/, /potovan/, /placa/, /osebn\w* prorac/)),
+    c(1, 'primer', any(EX)),
+  ],
+  5: [
+    c(1.5, 'najprej določiti cilj (rast prodaje, nižji stroški, ozko grlo)', any(/cilj/, /ozko grlo/, /ozkega grla/)),
+    c(2, 'primerjati stroške, donos, rok vračila, tveganje', any(/donos/, /rok vracil/, /tveganj/, /strosk\w* in (koristi|ucink|donos)/, /izracun/)),
+    c(2, 'oportunitetni strošek: kar izberem, se odpovem drugima', any(/oportunitet/, /odpoved/, /odrec/, /odpovem/)),
+    c(1.5, 'jasna izbira ene možnosti z utemeljitvijo', any(OP, /izberem/, /odlocil bi se/)),
+    c(1.5, 'povezava s stanjem podjetja: povpraševanje, prodaja, kapacitete, naročila', any(/povprasevanj/, /prodaj/, /kapacitet/, /narocil/, /kupc/, /stari stroji/)),
+  ],
+  6: [
+    c(2.5, 'razvoj redkosti ni odpravil (ostaja, premaknil se je, nastale so nove oblike)', any(/ni odpravil/, /ni odpravila/, /ni odpravilo/, /redkost (ostaja|se vedno)/, /ustvaril\w*[^.]{0,20}nov/, /nove (probleme|oblike|probleme|izzive)/, /odpravil (le|samo|delno)/, /premaknil/, /se vedno (obstaja|je prisotn)/)),
+    c(1.5, 'z višjim standardom rastejo tudi potrebe', any(/potrebe (rastejo|se povecujejo|narascajo|se siri)/, /visji standard/, /vec (potreb|zelj)/)),
+    c(2, 'večja proizvodnja porabi več naravnih virov/energije', any(/naravn\w* vir/, /energij/, /surovin/, /poraba/)),
+    c(2, 'ekologija/okolje: onesnaževanje, podnebje, trajnost', any(/ekolog/, /okolj/, /onesnaz/, /podnebn/, /trajnost/)),
+  ],
+  7: [
+    c(3, 'definicija: strošek zavržene priložnosti = vrednost najboljše odpovedane alternative', any(/strosek zavrzen/, /zavrzen\w* prilozn/, /najbolj\w* (druga )?alternativ/, /druga najbolj/, /cesar se odpovem/, /odpovemo se/, /odpoved/)),
+    c(2, 'povezano z izbiro/redkostjo (vedno izbiramo)', any(/izbir/, /redk/, /omejen/)),
+    c(2, 'ni samo denar: čas, priložnost, neposredni stroški ne zadostujejo', any(/ne (samo|le|zgolj) (denar|financ)/, /\bcas\b/, /prilozn/, /ne gre (samo|le) za denar/, /neposredn/)),
+    c(1.5, 'primer', any(EX)),
+  ],
+  8: [
+    c(2.5, 'oportunitetni strošek = korist odpovedane možnosti (kupim opremo → izgubim skladišče, in obratno)', any(/oportunitet/, /odpovem/, /odrec/, /korist\w* (skladisc|opreme)/)),
+    c(1, 'omeni obe možnosti (oprema, skladišče)', all(/oprem/, /skladisc/)),
+    c(2.5, 'potrebne informacije: donos, rok vračila, tveganje, povpraševanje, ozko grlo, stroški, izkoriščenost', items(2, /donos/, /rok vracil/, /tveganj/, /povprasevanj/, /ozko grlo/, /strosk/, /izkoriscen/, /financiran/)),
+    c(1.5, 'jasna odločitev', any(OP, /izberem/)),
+    c(1, 'utemeljitev odločitve (ozko grlo, povpraševanje, prostor)', any(/ozko grlo/, /povprasevanj/, /prostor/, /zmogljiv/, /kapacitet/)),
+  ],
+  9: [
+    c(2.5, 'subjektivni: odvisni od odločevalca, njegovih preferenc in alternativ', any(/subjektiv/, /odvis\w* od (odlocevalc|posameznik|tistega)/, /osebn\w* (vrednot|preferenc)/, /vsak (drugace|svoj)/)),
+    c(2, 'nosi ga tisti, ki odloča; ni prenosljiv', any(/nosi/, /ne more\w* prenest/, /tisti ki (odloca|izbira)/, /odlocevalec/)),
+    c(2, 'odgovor DA: dva posameznika imata lahko različen strošek', any(/\bda[,.!]/, /\bda,? (se )?(lahko|imata|ima)/, /razlicn\w* (oportunitet|strosk)/, /ni isto/, /ni enak/, /ni nujno enak/)),
+    c(2, 'primer', any(EX)),
+    c(1.5, 'lastno mnenje/utemeljitev', any(OP, /ker/)),
+  ],
+  10: [
+    c(4, 'našteti vsaj 4 cilje (rast, polna zaposlenost, stabilnost cen, pravična delitev, varnost, učinkovitost)', items(4, /rast/, /zaposlen/, /stabilnost cen|stabiln\w* cen/, /delitev|pravicn/, /varnost/, /ucinkovit/)),
+    c(1.5, 'izbere najpomembnejši cilj', any(OP, /najpomembnej/)),
+    c(1.5, 'utemeljitev izbire (ker, zato)', any(/\bker\b/, /\bzato\b/)),
+    c(3, 'posledice zanemarjanja cilja (brezposelnost, revščina, neenakost, nestabilnost, manj davkov)', any(/posledic/, /brezposeln/, /revsc/, /neenakost/, /nestabil/, /manj davk/, /socialn\w* napet/)),
+  ],
+  11: [
+    c(2.5, 'inflacija/dvig cen ob večji zaposlenosti', any(/inflacij/, /cene (rastejo|narasca|dvig)/, /dvig\w* cen/, /visje cene/)),
+    c(2, 'mehanizem: več zaposlenih → plače, povpraševanje, več denarja', any(/placa/, /povprasevanj/, /vec (denarja|kupuj)/)),
+    c(2, 'ukrepi države: obrestne mere, monetarni/fiskalni, davki, javna poraba', any(/obrestn/, /monetarn/, /fiskaln/, /davk/, /javna poraba/)),
+    c(2.5, 'ravnotežje: država mora presoditi/ najti kompromis', any(/ravnotez/, /kompromis/, /uravnotez/, /prioritet/, /presod/)),
+    c(1, 'lastno mnenje', any(OP)),
+  ],
+  12: [
+    c(2, 'KAJ proizvajati (izdelki, količine)', all(/\bkaj\b/, /(izdelk|storitv|proizvod|kolicin)/)),
+    c(2, 'KAKO proizvajati (tehnologija, delavci, surovine, postopek)', all(/\bkako\b/, /(tehnolog|delavc|surovin|vir|postopek|stroj)/)),
+    c(2, 'ZA KOGA proizvajati (kupci, trg, razdelitev)', all(/za koga/, /(kupc|trg|razdel|segment|potrosnik)/)),
+    c(1.5, 'konkreten primer podjetja', any(EX, /pohistv/, /miz/)),
+    c(1.5, 'izbere najzahtevnejše vprašanje', any(/najzahtevnej/, /najtezj/, /najpomembnej/)),
+    c(1, 'utemeljitev (ker)', any(/\bker\b/, /\bzato\b/)),
+  ],
+  13: [
+    c(2, 'primarne = nujne, eksistenčne (hrana, voda, streha)', all(/primarn/, /(nujn|eksisten|prezivet|hran|voda|streha)/)),
+    c(2, 'sekundarne = manj nujne, višje (izobrazba, potovanja, kultura)', all(/sekundarn/, /(manj nujn|visj|kultur|izobraz|potovan|luksuz|zabav|kakovost)/)),
+    c(1.5, 'z razvojem/standardom se potrebe spreminjajo in širijo', any(/razvoj/, /standard/, /potrebe (se )?(rastejo|spreminjajo|narascajo|siri)/)),
+    c(2.5, 'družba ustvarja nepotrebne potrebe (oglaševanje, moda, manipulacija, potrošništvo)', any(/oglasevan/, /manipul/, /\bmoda\b/, /potrosnisk/, /marketing/, /druzbena omrez/)),
+    c(1.5, 'primer', any(EX)),
+  ],
+  14: [
+    c(2, 'celotna koristnost = skupna korist vseh enot', all(/celotn\w* koristnost/, /(skupn|vsot|vseh enot|vse enote)/)),
+    c(2, 'mejna koristnost = korist zadnje/dodatne enote', all(/mejn\w* koristnost/, /(zadnj|dodatn|vsake nadaljnje|se ena)/)),
+    c(2.5, 'zakon: z vsako enoto mejna koristnost pada', any(/\bpada/, /manj(sa)? koristnost/, /zmanjsuje/, /nizja/, /manj (vredn|koristn)/)),
+    c(1.5, 'praktičen primer', any(EX)),
+    c(2, 'kako to upoštevajo podjetja: popusti, akcije, paketi, cenovna politika', any(/popust/, /akcij/, /3 za 2|tri za dve/, /cenovn/, /prodajn\w* strategij/, /paket/, /vecje pakiranje/)),
+  ],
+  15: [
+    c(1.5, 'potrošne: neposredna raba (miza, omara, kruh)', all(/potrosn/, /(neposredn|koncn|potrosnik|miza|omara|kruh|zadovolj)/)),
+    c(2, 'kapitalne: stroji, orodja, oprema za proizvodnjo', all(/kapitaln/, /(stroj|proizvodn|nalozb|orodj|oprem)/)),
+    c(2, 'intermediarne: surovine, materiali, polizdelki', all(/intermediarn/, /(surovin|material|\bles\b|polizdelk|vmesn)/)),
+    c(1.5, 'konkretni primeri iz podjetja', any(EX, /\bles\b/, /stroj/, /\bmiza\b/, /omara/)),
+    c(2, 'zakaj je pomembno: stroški, nabava, naložbe, načrtovanje, amortizacija', any(/strosk/, /nabav/, /nalozb/, /nacrtova/, /amortizacij/, /pravilno razume/)),
+  ],
+  16: [
+    c(2, 'produkcija = pretvorba vložkov v dobrine/storitve', any(/transformacij/, /pretvor/, /proces v katerem/, /ustvar\w* (dobrin|izdelk|storitv)/, /proizvajamo dobrine/, /pridobivan\w* dobrin/, /spremen\w*[^.]{0,30}(v|v) (izdelk|dobrin)/)),
+    c(1.5, 'zakaj temeljna: zadovoljuje potrebe, dohodki, brez nje ni dobrin', any(/zadovolj\w* potreb/, /dohodk/, /brez (nje|produkcije)/, /temelj/)),
+    c(3, 'vhodni elementi: delovna sila, predmeti dela (surovine), sredstva za delo (stroji)', items(3, /delovn\w* sil|\bdelo\b|delavc/, /predmet\w* dela|surovin|material|\bles\b/, /sredstv\w* za delo|stroj|prostor|oprema/)),
+    c(2.5, 'primer pohištva (les, rezanje, brušenje, sestavljanje, miza)', any(/\bles\b/, /miz/, /omar/, /brusen/, /lakiran/, /rezan/, /sestavljan/)),
+  ],
+  17: [
+    c(1.5, 'enostavna = enak obseg', all(/enostavn/, /(enak\w* obseg|isti obseg|enako|ne spremeni)/)),
+    c(1.5, 'razširjena = večji obseg (naložbe, rast)', all(/razsirjen/, /(vecj\w* obseg|povecan|rast|nalozb|vec)/)),
+    c(1.5, 'zožena = manjši obseg (padec, izguba, kriza)', all(/zozen/, /(manjs\w* obseg|zmanjs|padec|izgub|kriz|manj)/)),
+    c(2, 'okoliščine: povpraševanje, kriza, izguba, naložbe, dobiček', any(/povprasevanj/, /kriz/, /izgub/, /nalozb/, /dobicek/)),
+    c(1.5, 'katera oblika je najbolj zaželena (razširjena) ', any(/razsirjen\w* (je )?(najbolj|boljsa|zazelen)/, /najbolj zazelen/, OP)),
+    c(1.5, 'utemeljitev: rast, konkurenčnost, razvoj, delovna mesta', any(/rast/, /konkurencn/, /razvoj/, /delovna mesta/)),
+  ],
+  18: [
+    c(2, 'naturalna = za lastno uporabo / samooskrba', all(/naturaln/, /(lastn\w* (uporab|potreb)|samooskrb|zase)/)),
+    c(2, 'blagovna = za trg, prodajo, menjavo', all(/blagovn/, /(trg|prodaj|menjav|drugim)/)),
+    c(2.5, 'delitev dela/specializacija → večja produktivnost, menjava, trg', all(any_(/delitev dela/, /specializacij/), /(produktivnost|vec izdelk|ucink|menjav|trg)/)),
+    c(2.5, 'ne vedno prednost: odvisnost, enoličnost, tveganje, ranljivost', any(/ne vedno/, /slabost/, /odvisnost/, /enolicn/, /tvegan/, /ranljiv/, /pomanjkljivost/)),
+    c(1, 'lastno mnenje', any(OP)),
+  ],
+  19: [
+    c(2, 'premoženje = sredstva podjetja za poslovanje', any(/sredstv\w* (podjetja|za poslovanje)/, /vse kar podjetje (ima|uporablja)/, /ekonomsk\w* dobrin/, /redke dobrin/, /premozenj\w* (so|je|pomeni)/)),
+    c(2, 'brez premoženja ni poslovanja (pogoj za obstoj)', any(/brez (premozenja|sredstev|njega|nje)/, /pogoj/, /ne more (poslovat|obstajat|delovat)/, /ni poslovn/)),
+    c(2, 'stalna sredstva: dolgoročna (stroji, zgradbe, oprema)', all(any_(/stalna/, /osnovna/), /(dolgorocn|vec let|stroj|zgradb|oprema|vozil)/)),
+    c(2, 'gibljiva sredstva: kratkoročna (zaloge, terjatve, denar)', all(/gibljiv/, /(kratkorocn|zaloge|terjatv|denar|material)/)),
+    c(1.5, 'konkretni primeri', any(EX, /stroj/, /zaloge/, /terjatv/)),
+  ],
+  20: [
+    c(1.5, 'premoženje = vsa sredstva podjetja', any(/premozenj\w* (je|so|pomeni)[^.]{0,40}sredstv/, /vsa sredstva/, /vse kar (ima|poseduje)/)),
+    c(1.5, 'dolgovi = obveznosti do drugih (posojila, dobavitelji, država)', any(/dolgov\w* (so|je|pomeni)/, /dolgujemo|dolguje/, /posojil/, /obveznost/)),
+    c(3, 'kapital = premoženje − dolgovi (lastniški del)', any(/premozenje\s*(-|minus|manj)\s*dolg/, /kapital (je|=) premozenje/, /razlika med premozenjem in dolgov/, /lastnisk\w* del/, /premozenje odstejemo/, /odstej\w* dolg/)),
+    c(2, 'zakaj obveznosti: jih je treba vrniti, plačilna sposobnost, zadolženost', any(/vrniti/, /ni (nas|njegovo)/, /placilna sposobnost/, /prezadolzen/, /zadolzen/, /dolgovi (zmanjsuj|vplivaj)/)),
+    c(2, 'praktičen primer (številke ali situacija)', any(EX, /\d{3}/)),
+  ],
+  21: [
+    c(2.5, 'zadolževanje poveča sredstva in dolgove, kapital ostane enak', any(/kapital (ostane|se ne spremeni|ni spremenjen|je isti)/, /kapital se ne (poveca|spremeni)/, /povecajo se (sredstva|dolgovi)/, /dolgovi rastejo/, /kapital ostaja/)),
+    c(2, 'posledice: obresti, odplačila, manjša stabilnost, tveganje, finančni vzvod', any(/obrest/, /odplacil/, /stabilnost/, /vzvod/, /tveganj/)),
+    c(2, 'kdaj smiselno (donos naložbe > obresti, obvladljiva odplačila)', any(/smiselno/, /donos\w* (je )?(visj|vec)/, /ce (nalozba|naložba)/, /donosna/, /vecji od obresti/)),
+    c(2, 'kdaj nevarno (visoki dolgovi, negotovi prihodki, plačilna nesposobnost)', any(/nevarno/, /placilna nesposobnost/, /negotov/, /visok\w* dolg/, /prezadolzen/, /ne more odplacat/)),
+    c(1.5, 'lastno mnenje', any(OP)),
+  ],
+  22: [
+    c(2.5, 'zakaj izgubljajo vrednost: obraba, zastaranje, staranje, uporaba', any(/obrab/, /zastaran/, /staranj/, /uporab/)),
+    c(2.5, 'namen: strošek razporediti po letih/dobi koristnosti', any(/razporedi/, /po letih/, /dob\w* (koristnosti|uporabe)/, /strosek (obrabe|sredstva)/, /prenos\w* vrednosti/, /odpis/)),
+    c(2, 'pomen pri stroških: lastna cena, dobiček, poslovni izid', any(/strosk/, /lastn\w* cen/, /dobicek/, /poslovni izid/)),
+    c(2, 'načrtovanje naložb: zamenjava opreme, nova naložba', any(/zamenjav/, /nalozb/, /nacrtova/, /obnov/)),
+  ],
+  24: [
+    c(2.5, 'stopnja 25 %', all(/25/, /(stopnj|%|odstot)/)),
+    c(1.5, 'postopek: 100 % / 4 leta', any(/100\s*(%)?\s*(\/|:|deljeno z)\s*4/, /stopnja = 100/, /deli\w* (z|s) 4/, /100 deljeno/)),
+    c(2.5, 'letna amortizacija 50.000 €', any(/50[. ]?000/)),
+    c(1.5, 'prednosti (preprosto, enak strošek, lažje načrtovanje)', any(/prednost/, /enostavn/, /preprost/, /enak\w* strosk/, /lazje nacrtova/)),
+    c(2, 'slabosti (ne upošteva dejanske obrabe/zastaranja)', any(/slabost/, /ne upostev/, /ni realn/, /dejansk\w* obrab/, /zastaran/, /vzdrzevan/)),
+  ],
+  26: [
+    c(2, 'fiksni: ne spreminjajo se z obsegom', all(/fiksn/, /(ne spreminja|stalni|enaki|neodvisn|ne glede na)/)),
+    c(2, 'variabilni: spreminjajo se z obsegom', all(/variabiln/, /(spreminja|odvisn|obseg|narasca)/)),
+    c(2.5, 'vsaj 3 primeri stroškov (najemnina, amortizacija, material, energija, plače …)', items(3, /najemnin/, /amortizacij/, /zavarovan/, /obrest/, /material|\bles\b|surovin/, /energij/, /prevoz/, /placa\w*/)),
+    c(1, 'utemeljitev razvrstitve (ker, zato)', any(/\bker\b/, /\bzato\b/)),
+    c(2.5, 'zakaj pomembna struktura: cene, prag, odločitve, načrtovanje', any(/cen/, /prag/, /odlocit/, /nacrtova/, /obseg/, /kalkulacij/)),
+  ],
+  27: [
+    c(2.5, 'proporcionalni: rastejo enako hitro kot obseg', all(/proporcional/, /(enako hitro|sorazmern|enak\w* tempo|premosorazmern)/)),
+    c(2.5, 'degresivni: rastejo počasneje od obsega', all(/degresiv/, /(pocasneje|pocasnej|manj hitro|nazadujoc|padajoc|pocasneje)/)),
+    c(2.5, 'progresivni: rastejo hitreje od obsega', all(/progresiv/, /(hitreje|hitrej|napredujoc|narasca)/)),
+    c(2.5, 'najbolj skrbijo progresivni (jedo dobiček)', any(/(skrbi|skrb|nevarn)\w*[^.]{0,60}progresiv/, /progresiv\w*[^.]{0,80}(skrb|nevarn|problem|dobicek|najbolj)/)),
+    c(1.5, 'vzrok/ukrep: nadure, meja kapacitet, organizacija', any(/nadure/, /kapacitet/, /organizacij/, /vzrok/, /zmogljiv/)),
+  ],
+  28: [
+    c(3, 'prag = celotni prihodki so enaki skupnim stroškom (točka preloma, dobiček nič)', any(/prihodki (so )?(enaki|=)\s*(skupn|strosk|celotn)/, /prihodki in stroski (so )?enak/, /prihodk\w* \S* skupnim strosk/, /celotni prihodki (se )?izenacij/, /pokrij\w* (vse )?strosk/, /tocka preloma/, /dobicek (je )?(nic|0)/)),
+    c(2, 'pod pragom: izguba', all(/pod pragom/, /izgub/)),
+    c(2, 'nad pragom: dobiček', all(/nad pragom/, /dobicek/)),
+    c(2, 'zakaj pomemben: odločanje o ceni, obsegu, koliko prodati', any(/odlocan/, /\bcen/, /obseg/, /koliko (moramo|je treba|mora) prodat/, /nacrtova/)),
+    c(1.5, 'razmerje: prihodki > stroški ali stroški > prihodki', any(/prihodk\w* (so )?(vecji|manjsi|presega|presegaj)/, /stroski presegaj/, /prihodki presegaj/)),
+    c(1, 'formula/izračun (FS / (cena − VS))', any(/\/\s*\(\s*(cena|p)/, /fiksn\w* strosk\w* deljeno/)),
+  ],
+  29: [
+    c(2, 'fiksni stroški se povečajo', all(/fiksn/, /(povec|narast|visj|rast)/)),
+    c(1.5, 'skupni stroški se povečajo', any(/skupn\w* strosk\w*[^.]{0,20}(povec|narast|visj)/, /(povec|narast)\w* skupn/)),
+    c(3, 'prag rentabilnosti se zviša', any(/prag (se )?(zvis|povis|dvig|poveca|premakne vis)/, /visji prag/, /vec (moramo|mora|je treba) prodat/)),
+    c(1.5, 'omeni amortizacijo, obresti, vzdrževanje', any(/amortizacij/, /obrest/, /vzdrzevan/)),
+    c(1.5, 'nova zmogljivost lahko zniža variabilne stroške', any(/zmogljiv/, /kapacitet/, /variabiln\w* (strosk\w* )?(zniz|manj)/)),
+    c(3, 'informacije pred odločitvijo (povpraševanje, cena, financiranje, donos, kapacitete …)', items(3, /povprasevanj|prodaj/, /\bcen/, /financiran|posojil|obrest/, /rok vracil|donos/, /izkoriscen|kapacitet/, /variabiln/)),
+  ],
+  30: [
+    c(2.5, 'odgovor: NE, prag ni dovolj', any(/ni (dovolj|zadostn)/, /ne\s+(zadosca|zadostuje)/, /\bne\b[^.]{0,20}(dovolj|zadost)/)),
+    c(2, 'prag = brez izgube, a brez dobička/komaj pokrije stroške', any(/brez izgube/, /nic dobicka/, /komaj pokrij/, /ni dobicka/, /dobicek (je )?(nic|0)/, /pokrije (vse )?strosk/)),
+    c(2, 'dolgoročna uspešnost: dobiček za razvoj, vračanje dolgov, rast, naložbe', any(/dolgorocn/, /razvoj/, /rast/, /vracanj/, /nalozb/)),
+    c(4, 'dodatni kazalniki (vsaj 3): rentabilnost, ekonomičnost, produktivnost, likvidnost, denarni tok, zadolženost …', items(3, /rentabilnost/, /ekonomicnost|gospodarnost/, /produktivnost/, /likvidnost|placilna sposobnost/, /denarni tok/, /rast prodaje|trzni delez/, /zadolzenost/)),
+    c(1, 'lastno mnenje', any(OP)),
+  ],
+};
+
+// Kazni za napačne trditve: [odbitek (v enotah uteži), opis, vzorec]
+const PEN = {
+  20: [[3, 'napaka: kapital NI premoženje + dolgovi, ampak premoženje − dolgovi', /kapital (je|=) premozenje (\+|plus) dolg/]],
+  21: [[3, 'napaka: zadolževanje samo po sebi ne poveča kapitala (poveča sredstva in dolgove)', /kapital se (poveca|povecuje|povecajo)|(?<!ne )(poveca|povecuje)\w* kapital/]],
+  27: [[3, 'napaka: degresivni stroški ne rastejo hitreje, ampak počasneje od obsega', /degresiv\w*(?:(?!progresiv|proporcional|pocasn|[.,;]).){0,40}?\bhitrej/]],
+  28: [[3, 'napaka: pod pragom rentabilnosti je izguba, ne dobiček', /pod pragom (je |ima |ustvarja )?dobicek/]],
+};

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EKP kolokvij: vadba</title>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#ffffff; --ink:#1b2333; --muted:#5d6678; --line:#d9dfec;
+  --navy:#1f3864; --blue:#2e5597; --soft:#dce6f4;
+  --good:#2f7d32; --goodbg:#e5f3e3; --mid:#b07400; --midbg:#fff4d6; --bad:#b3261e; --badbg:#fde7e5;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#10141d; --card:#192030; --ink:#e8ecf5; --muted:#9aa5bc; --line:#2b3550;
+    --navy:#8fb2ee; --blue:#7aa2e6; --soft:#22304d;
+    --good:#7ccf80; --goodbg:#1c3320; --mid:#e8b44a; --midbg:#3a2f12; --bad:#f08b83; --badbg:#3b1b19; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:16px}
+h1{font-size:24px;margin:8px 0 4px;color:var(--navy)}
+h2{font-size:18px;margin:0 0 8px;color:var(--navy)}
+.sub{color:var(--muted);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:0 0 14px}
+.btn{appearance:none;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:8px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+.btn.sec{background:transparent;color:var(--blue)}
+.btn.sm{padding:6px 10px;font-size:14px}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+.topic{display:flex;justify-content:space-between;gap:8px;align-items:center;text-align:left;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit}
+.topic:hover{border-color:var(--blue)}
+.pill{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--soft);color:var(--navy);white-space:nowrap}
+.bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--blue)}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 8px;color:var(--muted);font-size:14px}
+.q{font-size:18px;font-weight:600;margin:6px 0 12px}
+textarea{width:100%;min-height:150px;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;background:var(--card);color:var(--ink)}
+textarea:focus{outline:2px solid var(--blue);border-color:transparent}
+.hint{color:var(--muted);font-size:13px}
+.score{display:flex;align-items:center;gap:14px;margin:0 0 10px}
+.pct{font-size:44px;font-weight:800;line-height:1}
+.pct.good{color:var(--good)} .pct.mid{color:var(--mid)} .pct.bad{color:var(--bad)}
+.verdict{font-weight:700}
+.crit{list-style:none;padding:0;margin:8px 0}
+.crit li{display:flex;gap:10px;align-items:flex-start;border-radius:8px;padding:8px 10px;margin:0 0 6px}
+.crit li.ok{background:var(--goodbg)} .crit li.part{background:var(--midbg)} .crit li.no{background:var(--badbg)} .crit li.pen{background:var(--badbg);border:1px solid var(--bad)}
+.crit .ic{font-weight:800;width:18px;text-align:center}
+.crit .pts{margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap}
+.model{border-left:4px solid var(--blue);background:var(--soft);padding:10px 14px;border-radius:0 8px 8px 0;margin:8px 0}
+.model p{margin:0 0 6px} .model ul{margin:0 0 6px;padding-left:20px}
+.note{font-size:13px;color:var(--muted);border:1px dashed var(--line);border-radius:8px;padding:8px 10px;margin:10px 0}
+.stat{display:flex;gap:16px;flex-wrap:wrap}
+.stat div{flex:1;min-width:120px;background:var(--soft);border-radius:10px;padding:10px 12px}
+.stat b{display:block;font-size:24px;color:var(--navy)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+const QS = /*QS_JSON*/;
+const TOPICS_ORDER = [...new Set(QS.map(q => q.topic))];
+
+// ---------- pomočniki za merila ----------
+function any(...r){ return {t:'any', r}; }
+function all(...r){ return {t:'all', r}; }
+function items(min, ...r){ return {t:'items', min, r}; }
+function any_(...r){ return new RegExp(r.map(x => x.source).join('|')); }
+/*CRITERIA*/
+
+// ---------- ocenjevanje ----------
+function norm(s){
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/\s+/g,' ').trim();
+}
+function evalSpec(sp, t){
+  if(sp.t === 'any') return sp.r.some(x => x.test(t)) ? 1 : 0;
+  if(sp.t === 'all') return sp.r.every(x => x.test(t)) ? 1 : 0;
+  const n = sp.r.filter(x => x.test(t)).length;
+  return Math.min(1, n / sp.min);
+}
+function grade(n, text){
+  const t = norm(text);
+  const words = t ? t.split(' ').length : 0;
+  const cr = CR[n] || [];
+  const tot = cr.reduce((a, x) => a + x[0], 0) || 1;
+  // "Slogovna" merila (primer, mnenje) štejejo samo, če je odgovor vsebinsko pokrit.
+  const isStyle = sp => sp.r.includes(EX) || sp.r.includes(OP);
+  const fs = cr.map(([w, label, sp]) => evalSpec(sp, t));
+  let ct = 0, cg = 0;
+  cr.forEach(([w, label, sp], i) => { if(!isStyle(sp)){ ct += w; cg += w * fs[i]; } });
+  const gate = ct ? Math.min(1, (cg / ct) / 0.5) : 1;
+  let got = 0; const res = [];
+  cr.forEach(([w, label, sp], i) => {
+    const f = isStyle(sp) ? fs[i] * gate : fs[i];
+    got += w * f;
+    res.push({label, f, pts: w / tot * 100});
+  });
+  let pct = got / tot * 100;
+  const pen = [];
+  for(const [p, label, rx] of (PEN[n] || [])){
+    if(rx.test(t)){ pen.push({label, pts: p / tot * 100}); pct -= p / tot * 100; }
+  }
+  let short = false;
+  if(words < 12){ pct *= 0.5; short = true; }
+  pct = Math.max(0, Math.min(100, Math.round(pct)));
+  return {pct, res, pen, words, short};
+}
+function verdict(p){
+  if(p >= 85) return ['Odlično', 'good'];
+  if(p >= 70) return ['Dobro', 'good'];
+  if(p >= 50) return ['Delno pravilno', 'mid'];
+  if(p >= 30) return ['Šibko', 'bad'];
+  return ['Premalo ali mimo', 'bad'];
+}
+
+// ---------- stanje ----------
+let S = {view:'menu', list:[], i:0, session:{}, graded:null};
+let HIST = {};
+try{ HIST = JSON.parse(localStorage.getItem('ekp_hist') || '{}'); }catch(e){ HIST = {}; }
+function saveHist(){ try{ localStorage.setItem('ekp_hist', JSON.stringify(HIST)); }catch(e){} }
+const $app = document.getElementById('app');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const bold = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+function shuffle(a){ a = a.slice(); for(let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function start(list, random){
+  S = {view:'quiz', list: random ? shuffle(list) : list, i:0, session:{}, graded:null};
+  render();
+}
+function modelHtml(q){
+  let html = '', ul = false;
+  for(const p of q.model){
+    if(p.startsWith('• ')){ if(!ul){ html += '<ul>'; ul = true; } html += '<li>' + bold(p.slice(2)) + '</li>'; }
+    else { if(ul){ html += '</ul>'; ul = false; } html += '<p>' + bold(p) + '</p>'; }
+  }
+  if(ul) html += '</ul>';
+  return html;
+}
+function modelText(q){ return q.model.map(p => p.replace(/\*\*/g, '').replace(/^• /, '- ')).join('\n'); }
+
+function bestPct(n){ return HIST[n] ? HIST[n].best : null; }
+
+// ---------- prikazi ----------
+function renderMenu(){
+  const done = QS.filter(q => HIST[q.n]).length;
+  const avg = done ? Math.round(QS.filter(q => HIST[q.n]).reduce((a, q) => a + HIST[q.n].last, 0) / done) : null;
+  const weak = QS.filter(q => HIST[q.n] && HIST[q.n].last < 70);
+  let h = '<h1>Vadba za kolokvij</h1><p class="sub">Ekonomika in podjetništvo, ' + QS.length + ' vprašanj s kolokvija. Odgovori po svoje, program oceni v odstotkih.</p>';
+  h += '<div class="card"><h2>Kako deluje</h2><ul style="margin:0;padding-left:20px">' +
+       '<li>Dobiš vprašanje, odgovoriš s svojimi besedami (kot na kolokviju).</li>' +
+       '<li>Program preveri, ali si omenil ključne misli, in da odstotek ter razčlenitev po merilih.</li>' +
+       '<li>Potem vidiš, kaj je manjkalo, in vzorčni odgovor.</li>' +
+       '<li>Pri vsakem odgovoru lahko kopiraš besedilo za Claude, ki ga natančneje pregleda.</li></ul>' +
+       '<div class="note">Program išče ključne pojme (tudi brez šumnikov). Če nekaj pravilno povedeš z drugimi besedami, lahko izgubi točke. Zato ga jemlji kot orientacijo, ne kot dokončno oceno.</div></div>';
+  if(done) h += '<div class="card"><div class="stat"><div><b>' + done + '/' + QS.length + '</b>vprašanj poskusenih</div><div><b>' + avg + ' %</b>povprečje zadnjih poskusov</div><div><b>' + weak.length + '</b>pod 70 %</div></div></div>';
+  h += '<div class="card"><h2>Začni</h2><div class="row">' +
+       '<button class="btn" data-act="all">Vseh ' + QS.length + ' po vrsti</button>' +
+       '<button class="btn sec" data-act="rand10">10 naključnih</button>' +
+       '<button class="btn sec" data-act="randall">Vseh ' + QS.length + ' naključno</button>' +
+       (weak.length ? '<button class="btn sec" data-act="weak">Ponovi slabe (' + weak.length + ')</button>' : '') +
+       '</div></div>';
+  h += '<div class="card"><h2>Po temah</h2><div class="grid">';
+  TOPICS_ORDER.forEach((t, ti) => {
+    const qs = QS.filter(q => q.topic === t);
+    const dn = qs.filter(q => HIST[q.n]).length;
+    h += '<button class="topic" data-topic="' + ti + '"><span>' + esc(t) + '</span><span class="pill">' + dn + '/' + qs.length + '</span></button>';
+  });
+  h += '</div></div>';
+  if(done) h += '<div class="row"><button class="btn sec sm" data-act="reset">Pobriši zgodovino</button></div>';
+  $app.innerHTML = h;
+}
+
+function renderQuiz(){
+  const q = S.list[S.i];
+  const total = S.list.length;
+  let h = '<div class="top"><span>Vprašanje ' + (S.i + 1) + ' od ' + total + '</span><span><button class="btn sec sm" data-act="menu">Meni</button></span></div>';
+  h += '<div class="bar"><i style="width:' + (S.i / total * 100) + '%"></i></div><br>';
+  h += '<div class="card"><span class="pill">' + esc(q.topic) + '</span> <span class="pill">vpr. ' + q.n + '</span>';
+  h += '<div class="q">' + esc(q.question) + '</div>';
+  if(!S.graded){
+    h += '<textarea id="ans" placeholder="Napiši odgovor po svoje. Ctrl+Enter za preverjanje." autofocus></textarea>';
+    h += '<div class="row" style="margin-top:10px"><button class="btn" data-act="check">Preveri odgovor</button><button class="btn sec" data-act="skip">Preskoči</button><button class="btn sec" data-act="peek">Pokaži vzorčni odgovor</button></div>';
+    h += '<div class="hint" style="margin-top:8px">Namig: napiši definicijo, razlago, primer in (če vprašanje to zahteva) svoje mnenje.</div>';
+    if(S.peek) h += '<div class="model"><b>Vzorčni odgovor</b>' + modelHtml(q) + '</div>';
+  } else {
+    const g = S.graded; const [vt, vc] = verdict(g.pct);
+    h += '<div class="score"><div class="pct ' + vc + '">' + g.pct + ' %</div><div><div class="verdict">' + vt + '</div><div class="hint">' + g.words + ' besed' + (g.short ? ' · odgovor je prekratek, ocena je prepolovljena' : '') + '</div></div></div>';
+    h += '<div class="bar"><i style="width:' + g.pct + '%;background:var(--' + (vc === 'good' ? 'good' : vc === 'mid' ? 'mid' : 'bad') + ')"></i></div>';
+    h += '<h2 style="margin-top:14px">Razčlenitev po merilih</h2><ul class="crit">';
+    g.res.forEach(r => {
+      const cls = r.f >= 1 ? 'ok' : r.f > 0 ? 'part' : 'no';
+      const ic = r.f >= 1 ? '✓' : r.f > 0 ? '~' : '✗';
+      const got = Math.round(r.pts * r.f * 10) / 10;
+      h += '<li class="' + cls + '"><span class="ic">' + ic + '</span><span>' + esc(r.label) + (r.f > 0 && r.f < 1 ? ' <i>(delno)</i>' : '') + '</span><span class="pts">' + got + ' / ' + Math.round(r.pts * 10) / 10 + '</span></li>';
+    });
+    g.pen.forEach(p => { h += '<li class="pen"><span class="ic">!</span><span>' + esc(p.label) + '</span><span class="pts">−' + Math.round(p.pts * 10) / 10 + '</span></li>'; });
+    h += '</ul>';
+    h += '<div class="model"><b>Vzorčni odgovor</b>' + modelHtml(q) + '</div>';
+    h += '<div class="note">Program preverja ključne pojme. Če si bistvo povedal pravilno z drugimi besedami, lahko manjka kakšna točka. Za natančnejši pregled kopiraj odgovor in ga prilepi Claudu.</div>';
+    h += '<div class="row"><button class="btn" data-act="next">' + (S.i + 1 < total ? 'Naslednje vprašanje' : 'Rezultat') + '</button><button class="btn sec" data-act="retry">Poskusi znova</button><button class="btn sec" data-act="copy">Kopiraj za Claude</button><span class="hint" id="copied"></span></div>';
+  }
+  h += '</div>';
+  $app.innerHTML = h;
+  const ta = document.getElementById('ans');
+  if(ta){ ta.value = S.draft || ''; ta.focus(); ta.addEventListener('input', () => { S.draft = ta.value; }); ta.addEventListener('keydown', e => { if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doCheck(); }); }
+}
+
+function renderSummary(){
+  const arr = S.list.map(q => ({q, r: S.session[q.n]})).filter(x => x.r);
+  const avg = arr.length ? Math.round(arr.reduce((a, x) => a + x.r.pct, 0) / arr.length) : 0;
+  const [vt, vc] = verdict(avg);
+  let h = '<h1>Rezultat</h1><div class="card"><div class="score"><div class="pct ' + vc + '">' + avg + ' %</div><div><div class="verdict">' + vt + '</div><div class="hint">povprečje ' + arr.length + ' odgovorov</div></div></div>';
+  h += '<table><tr><th>Vpr.</th><th>Naslov</th><th>%</th></tr>';
+  arr.forEach(x => {
+    const [, c2] = verdict(x.r.pct);
+    h += '<tr><td>' + x.q.n + '</td><td>' + esc(x.q.title) + '</td><td><b class="pct ' + c2 + '" style="font-size:16px">' + x.r.pct + '</b></td></tr>';
+  });
+  h += '</table>';
+  const weak = arr.filter(x => x.r.pct < 70);
+  h += '<div class="row" style="margin-top:12px">' + (weak.length ? '<button class="btn" data-act="redoweak">Ponovi slabe (' + weak.length + ')</button>' : '') + '<button class="btn sec" data-act="menu">Meni</button></div></div>';
+  $app.innerHTML = h;
+}
+
+function render(){
+  if(S.view === 'menu') renderMenu();
+  else if(S.view === 'quiz') renderQuiz();
+  else renderSummary();
+  window.scrollTo(0, 0);
+}
+
+function doCheck(){
+  const q = S.list[S.i];
+  const txt = (document.getElementById('ans') || {}).value || S.draft || '';
+  if(!txt.trim()){ return; }
+  const g = grade(q.n, txt);
+  S.graded = g; S.answer = txt; S.draft = '';
+  S.session[q.n] = {pct: g.pct, answer: txt};
+  const h = HIST[q.n] || {best: 0, last: 0, tries: 0};
+  h.last = g.pct; h.best = Math.max(h.best, g.pct); h.tries++;
+  HIST[q.n] = h; saveHist();
+  render();
+}
+function copyPrompt(){
+  const q = S.list[S.i];
+  const msg = 'Preveri moj odgovor na vprašanje za kolokvij (Ekonomika in podjetništvo). Oceni ga v % (točnost, popolnost, razumevanje), povej, kaj je pravilno, kaj manjka ali je napačno, in predlagaj izboljšavo. Pri mnenjih ne išči ene pravilne rešitve, ampak ali je utemeljeno.\n\nVPRAŠANJE (' + q.n + '):\n' + q.question + '\n\nMOJ ODGOVOR:\n' + S.answer + '\n\nREFERENCA (vzorčni odgovor iz mojega gradiva):\n' + modelText(q);
+  const done = () => { const el = document.getElementById('copied'); if(el) el.textContent = 'Kopirano. Prilepi v pogovor s Claudom.'; };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(msg).then(done, () => fallbackCopy(msg, done)); }
+  else fallbackCopy(msg, done);
+}
+function fallbackCopy(text, cb){
+  const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); cb(); }catch(e){}
+  document.body.removeChild(ta);
+}
+
+$app.addEventListener('click', e => {
+  const b = e.target.closest('[data-act],[data-topic]'); if(!b) return;
+  if(b.dataset.topic !== undefined){ start(QS.filter(q => q.topic === TOPICS_ORDER[+b.dataset.topic]), false); return; }
+  const a = b.dataset.act;
+  if(a === 'all') start(QS, false);
+  else if(a === 'randall') start(QS, true);
+  else if(a === 'rand10') start(shuffle(QS).slice(0, 10), false);
+  else if(a === 'weak') start(QS.filter(q => HIST[q.n] && HIST[q.n].last < 70), true);
+  else if(a === 'redoweak') start(S.list.filter(q => S.session[q.n] && S.session[q.n].pct < 70), true);
+  else if(a === 'menu'){ S = {view:'menu', list:[], i:0, session:{}, graded:null}; render(); }
+  else if(a === 'reset'){ if(confirm('Pobrišem vso zgodovino rezultatov?')){ HIST = {}; saveHist(); render(); } }
+  else if(a === 'check') doCheck();
+  else if(a === 'skip'){ S.peek = false; S.draft = ''; S.graded = null; if(S.i + 1 < S.list.length){ S.i++; render(); } else { S.view = 'summary'; render(); } }
+  else if(a === 'peek'){ S.peek = true; render(); }
+  else if(a === 'next'){ S.graded = null; S.peek = false; if(S.i + 1 < S.list.length){ S.i++; render(); } else { S.view = 'summary'; render(); } }
+  else if(a === 'retry'){ S.graded = null; S.draft = S.answer || ''; render(); }
+  else if(a === 'copy') copyPrompt();
+});
+render();
+</script>
+</body>
+</html>
